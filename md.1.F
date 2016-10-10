@@ -173,7 +173,9 @@
 
       ENDDO
       CALL WallTime(timeend)
-      WRITE(6,'(A,F20.10)')'The Iteration Time is ',timeend-timestart
+      OPEN(UNIT=99,FILE='Time_to_Solution')
+      WRITE(99,'(A,F20.10)')'The Iteration Time is ',timeend-timestart
+      CLOSE(99)
       DEALLOCATE(PARTCOORDS)
       DEALLOCATE(PARTFORCES)
       DEALLOCATE(PARTACCELS)

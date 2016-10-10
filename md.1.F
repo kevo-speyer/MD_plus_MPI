@@ -7,7 +7,7 @@
       REAL*8,  DIMENSION(:,:,:,:),ALLOCATABLE :: PARTVELS
       INTEGER, DIMENSION(:,:),  ALLOCATABLE :: CellSizes
       INTEGER  nCellRows,NCellCols,CellSize,NumIterations
-      INTEGER  nParticles,Dimension,nPartPerCell,CellDim
+      INTEGER  nParticles,Dimen,nPartPerCell,CellDim
       REAL*8 ran,centerx,centery
       REAL*8 rx1,ry1,rx,ry,r,rt
       REAL*8 TotPot,TotKin
@@ -33,10 +33,10 @@
       READ(Buffer,*)NumIterations
 
       ! Lets Allocate the number of cells
-      Dimension= int(Sqrt(NParticles/real(NPartPerCell)))
-      TotalCells = Dimension**2
-      NCellRows = Dimension
-      NCellCols = Dimension
+      Dimen= int(Sqrt(NParticles/real(NPartPerCell)))
+      TotalCells = Dimen**2
+      NCellRows = Dimen
+      NCellCols = Dimen
 
 
       ALLOCATE(CellSizes(NCellCols,NCellRows))
@@ -73,10 +73,12 @@
          DO j = 1,NCellCols
             Centerx = CellDim*real(j) + 0.5*CellDim
             Centery = CellDim*real(i) + 0.5*CellDim
+! Set first paricle in the box
             call random_number(ran)
             PartCoords(1,1,j,i) = centerx+((ran-0.5)*(CellDim-2))
             call random_number(ran)
             PartCoords(2,1,j,i) = centery+((ran-0.5)*(CellDim-2))
+! Set initial position of the remaining particles in the cell
             DO k=2,CellSizes(j,i)
                R=0
                DO WHILE (R < 4.0)
@@ -102,6 +104,8 @@
          ENDDO
       ENDDO
       CALL WallTime(timestart)
+
+      !START MAIN TIME LOOP
       ! Lets Start Iterating
       DO t=1,NumIterations
          ! Zero Energy variables
@@ -165,9 +169,8 @@
                ENDDO
             ENDDO
          ENDDO
-         WRITE(6,'(A,I10,A,E20.10,A)')'Iteration ',t,
-     $        ' with Total Energy',(TotPot+TotKin)/NParticles
-     $         ,' Per Particle'
+         WRITE(60,*) t, (TotPot+TotKin)/NParticles
+
       ENDDO
       CALL WallTime(timeend)
       WRITE(6,'(A,F20.10)')'The Iteration Time is ',timeend-timestart

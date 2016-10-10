@@ -111,7 +111,12 @@
          ! Zero Energy variables
          TotPot = 0.0
          TotKin = 0.0
-         ! Loop over Cells
+
+!$OMP PARALLEL  PRIVATE(CY1,I,J,CX2,CY2)  
+! SHARED(PartCoords,CellSizes,NCellRows,NCellCols) 
+! REDUCTION (+: TotPot,PartForces)
+!$OMP DO  REDUCTION (+: TotPot,PartForces)
+         ! FORCE LOOP ~N*LOG(N) !Loop over Cells
          DO CX1 = 1, NCellRows
             DO CY1 = 1,NCellCols
 !     Cells must be neighbors
@@ -151,7 +156,11 @@
                   ENDDO
                ENDDO
             ENDDO
-         ENDDO
+         ENDDO !END OF FORCE LOOP
+
+!$OMP END DO
+!$OMP END PARALLEL
+
 ! Now apply the forces to integrate to new positions
          DO CX1=1,NCellRows
             DO CY1=1,NCellCols

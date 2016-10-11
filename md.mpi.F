@@ -6,8 +6,8 @@
       REAL*8,  DIMENSION(:,:,:,:),ALLOCATABLE :: PARTACCELS
       REAL*8,  DIMENSION(:,:,:,:),ALLOCATABLE :: PARTVELS
       INTEGER, DIMENSION(:,:),  ALLOCATABLE :: CellSizes
-      INTEGER  nCellRows,NCellCols,CellSize,NumIterations
-      INTEGER  nParticles,Dimen,nPartPerCell,CellDim
+      INTEGER  nCellRows,NCellCols,CellSize,NumIterations,REQUEST
+      INTEGER  nParticles, nPartLoc,Dimen,nPartPerCell,CellDim
       REAL*8 ran,centerx,centery
       REAL*8 rx1,ry1,rx,ry,r,rt
       REAL*8 TotPot,TotKin
@@ -20,28 +20,67 @@
       PARAMETER(CellDim=12.0)
       PARAMETER(NPartPerCell=2)
       PARAMETER(ARMass=39.948)
+      INTEGER i_proc,j_proc, i, j, proc_col, proc_row,proc_dims 
+      INTEGER my_rank, rem, sz, ierror, tag, stat(MPI_STATUS_SIZE), comm
 
+!INITIALIZE MPI
+      call MPI_INIT(ierror)
 
-      IF(IARGC() < 2) THEN
-         WRITE(6,*)"Incorrect syntax: should be two arguments"
-         CALL EXIT(2)
+      comm = MPI_COMM_WORLD !Define World of proceses
+      
+!get my proc nr: my_rank
+      call MPI_COMM_RANK(comm, my_rank, ierror)
+      
+!get total nr of proc.: sz
+      call MPI_COMM_SIZE(comm, sz, ierror)
+
+!SET PROC TOPOLOGY, DO IT WITH CART; THIS IS RUBBISH
+!get procesor column and row 
+      proc_dim = int( sqrt (sz) ) ! Number of proc in each row/col
+      proc_row = int( my_rank / proc_dim )
+      proc_col = mod( my_rank, proc_dim)   
+  
+!Read from console Input
+      IF(my_rank .eq. 0 ) THEN            
+          IF( (IARGC() < 2) ) THEN
+             WRITE(6,*)"Incorrect syntax: should be two arguments"
+             CALL EXIT(2)
+          ENDIF
+
+          CALL GETARG(1,Buffer)
+          READ(Buffer,*)nParticles
+          CALL GETARG(2,Buffer)
+          READ(Buffer,*)NumIterations
       ENDIF
 
-      CALL GETARG(1,Buffer)
-      READ(Buffer,*)nParticles
-      CALL GETARG(2,Buffer)
-      READ(Buffer,*)NumIterations
+!Pass read variables to other procs
+      call MPI_BCAST(nParticles, 1, MPI_INTEGER, 0, comm, ierror)
+      call MPI_BCAST(NumIterations, 1, MPI_INTEGER, 0, comm, ierror)
+      
+!Calculate Number of particles in each proc
+      nPartLoc = int( nParticles / sz )
+      rem = mod(nParticles / sz)
+!Give one particle more to each proc until rem = 0
+      if( my_rank .ge. sz-rem ) then 
+          nPartLoc = nPartLoc + 1
+      end if
 
-      ! Lets Allocate the number of cells
-      Dimen= int(Sqrt(NParticles/real(NPartPerCell)))
+      ! Lets Allocate the number of cells in one proc 
+      !NO GHOST CELLS IMPLEMENTED
+      !Do it on 1 proc, so that grid is homogeneous over all space
+      if (my_rank .eq. 0 ) then 
+          Dimen = int(Sqrt(NPartLoc/real(NPartPerCell)))
+      end if
+!Pass Dimen to other procs
+      call MPI_BCAST(Dimen, 1, MPI_INTEGER, 0, comm, ierror)
+!Each Proc calculates TotalCells, NCellRows, NCellCols (all local)
       TotalCells = Dimen**2
       NCellRows = Dimen
       NCellCols = Dimen
-
-
+          
       ALLOCATE(CellSizes(NCellCols,NCellRows))
       CALL ComputeAtomsPerCell(CellSizes,NCellCols,NCellRows,
-     $     NParticles,maxCellSize)
+     $     NPartLoc,maxCellSize)
 
       WRITE(6,'(A,I6,A,I6,A,I6,A)')' The Total Number of Cells is ',
      $     TotalCells,' With ',maxCellSize,' particles per cell, and ',

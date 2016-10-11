@@ -151,6 +151,8 @@
          TotPot = 0.0
          TotKin = 0.0
 
+!HERE I SHOULD COMUNICATE WITH NEIGHBORING PROCS
+
 !$OMP PARALLEL  PRIVATE(CY1,I,J,CX2,CY2)  
 ! SHARED(PartCoords,CellSizes,NCellRows,NCellCols) 
 !$OMP DO  REDUCTION (+: TotPot,PartForces)
@@ -290,12 +292,15 @@
       RETURN
       END
 
-      SUBROUTINE ComputeAtomsPerCell(CellSizes,NCols,NRows,
-     $                               NParts,maxCellSize)
+      SUBROUTINE ComputeAtomsPerCell(CellSizes, !Number of particles in this cell
+     $                               NCols,NRows,
+     $             NParts,maxCellSize) !Maximum number of particles in a single cell
+!This routine gives out maxCellSize = maximum number of particles in one cell
+! And CellSizes(j,i) = number of particles in cell i,j
       IMPLICIT NONE
       INTEGER nCols,nRows,maxCellSize,nParts
       INTEGER CellSizes(NCols,NRows)
-      INTEGER nPartsPerCell
+      INTEGER nPartsPerCell !Parameter to initiate system
       INTEGER molsum,i,j
       PARAMETER(nPartsPerCell=2)
 

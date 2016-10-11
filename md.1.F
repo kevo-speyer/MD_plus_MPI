@@ -114,7 +114,7 @@
 
 !$OMP PARALLEL  PRIVATE(CY1,I,J,CX2,CY2)  
 ! SHARED(PartCoords,CellSizes,NCellRows,NCellCols) 
-! REDUCTION (+: TotPot,PartForces)
+
 !$OMP DO  REDUCTION (+: TotPot,PartForces)
          ! FORCE LOOP ~N*LOG(N) !Loop over Cells
          DO CX1 = 1, NCellRows
@@ -179,6 +179,10 @@
             ENDDO
          ENDDO
          WRITE(60,*) t, (TotPot+TotKin)/NParticles
+
+!TO TEST CORRECTNESS OF THE CODE WRITE OUT TRAJECTORY
+!         WRITE(77,*) t, PARTCOORDS(1,1,1,1),PARTCOORDS(2,1,1,1)
+
 
       ENDDO
       CALL WallTime(timeend)

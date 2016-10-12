@@ -78,7 +78,7 @@
       NCellRows = Dimen
       NCellCols = Dimen
           
-      ALLOCATE(CellSizes(NCellCols,NCellRows))
+      ALLOCATE(CellSizes(0:NCellCols+1,0:NCellRows+1))
       CALL ComputeAtomsPerCell(CellSizes,NCellCols,NCellRows,
      $     NPartLoc,maxCellSize)
 
@@ -87,7 +87,7 @@
      $     nParticles,' particles total in system'
 
 !OK, now we can allocate the Particle Matrix
-      ALLOCATE(PARTCOORDS(2,maxCellSize,NCellCols,NCellRows))
+      ALLOCATE(PARTCOORDS(2,maxCellSize,0:NCellCols+1,0:NCellRows+1))
       ALLOCATE(PARTFORCES(2,maxCellSize,NCellCols,NCellRows))
       ALLOCATE(PARTACCELS(2,maxCellSize,NCellCols,NCellRows))
       ALLOCATE(PARTVELS(2,maxCellSize,NCellCols,NCellRows))
@@ -107,11 +107,13 @@
 
 !     WE will be filling the cells, making sure than
 !     No atom is less than 4 Angstroms from another
-
+! INITIAL POSITIONS DEPEND ON THE PROCESOR
       DO i = 1,NCellRows
          DO j = 1,NCellCols
-            Centerx = CellDim*real(j) + 0.5*CellDim
-            Centery = CellDim*real(i) + 0.5*CellDim
+            Centerx = proc_col * CellDim * real(NCellCols) +
+     $                    CellDim*real(j) + 0.5*CellDim
+            Centery = proc_row * CellDim * real(NCellRows) +
+     $                    CellDim*real(i) + 0.5*CellDim
 ! Set first paricle in the box
             call random_number(ran)
             PartCoords(1,1,j,i) = centerx+((ran-0.5)*(CellDim-2))
@@ -152,7 +154,12 @@
          TotKin = 0.0
 
 !HERE I SHOULD COMUNICATE WITH NEIGHBORING PROCS
+!Exchange cell_sizes to neighboring cells
+      CALL CELL_SZ_EXCH
 
+!Recieve all neighboring cells from 8 neighbouring procs      
+      CALL PROC_DATA_EXCH
+       
 !$OMP PARALLEL  PRIVATE(CY1,I,J,CX2,CY2)  
 ! SHARED(PartCoords,CellSizes,NCellRows,NCellCols) 
 !$OMP DO  REDUCTION (+: TotPot,PartForces)
@@ -234,7 +241,9 @@
       DEALLOCATE(PARTACCELS)
       DEALLOCATE(PARTVELS)
       DEALLOCATE(CellSizes)
-
+     
+!END PARALLEL PROCESES
+      call MPI_FINALIZE(ierror)
 
       END PROGRAM
 
@@ -339,3 +348,110 @@
       t = dble(t0)/dble(tr)
       return
       end
+
+      SUBROUTINE PROC_DATA_EXCH(proc_row, proc_col, PartCoords)
+!DEFINE ALL VARIABLES THAT IM USING
+      INTEGER :: ne_rank,i_proc_NOPBC,j_proc_NOPBC, n_data
+    
+!MPI COMMUNICATION 
+      do i_proc = proc_row-1,proc_row+1
+          do j_proc = proc_col-1 ,proc_col+1
+              i_proc_NOPBC = i_proc
+              j_proc_NOPBC = j_proc
+
+              !Take care of BOUNDARY CONDITIONS (PBC in this case)
+               if(i_proc.lt.0) then
+                   i_proc = proc_dim - 1
+               else if(i_proc.ge.proc_dim) then
+                   i_proc = 0
+               endif 
+               if(j_proc.lt.0) then
+                   j_proc = proc_dim - 1  
+               else if(j_proc.ge.proc_dim) then
+                   j_proc = 0
+               endif  
+               
+        !set rank of neighbouring cell: ne_rank
+              ne_rank = i_proc * proc_dim + j_proc 
+
+        !No self-communication, skip central cell
+              if ( (i_proc.eq.proc_row).and.(j_proc.eq.proc_col)) cycle
+            
+! SAME ROW COMMUNICATION BETWEEN PROCS
+              if ( i_proc.eq.proc_row ) then 
+                  if (j_proc_NOPBC.gt.proc_col) then !Pass to right
+                      !Set cells to pass
+                      cel_col_send = NCellCols  
+                      cel_col_recv = NCellCols + 1
+                  else                               !Pass to left
+                      cel_col_send = 1
+                      cel_col_recv = 0
+                  end if
+                  
+                  call MPI_ISEND(PartCoords(:,:,cel_col_send,:),
+     $                sum(CellSizes(cel_col_send,:)), MPI_REAL, 
+     $                ne_rank, tag,comm, REQUEST, ierror)
+                  
+                  call MPI_RECV(PartCoords(:,:,cel_col_recv,:), 
+     $            sum(CellSizes(cel_col_recv,:)), MPI_REAL, ne_rank,
+     $                  tag, comm, STAT, ierror)   
+                  
+
+! SAME COLUMN COMMUNICATION BETWEEN PROCS
+              else if (j_proc.eq.proc_col) then
+                   if (i_proc_NOPBC.gt.proc_row) then !Pass UP
+                      !Set cells to pass
+                      cel_row_send = NCellRows  
+                      cel_row_recv = NCellRows + 1
+                  else                               !Pass DOWN
+                      cel_row_send = 1
+                      cel_row_recv = 0
+                  end if
+
+                   call MPI_ISEND(PartCoords(:,:,:,cel_row_send),
+     $                sum(CellSizes(:,cel_row_send)), MPI_REAL, 
+     $                ne_rank, tag,comm, REQUEST, ierror)
+                  
+                  call MPI_RECV(PartCoords(:,:,:,cel_row_recv), 
+     $            sum(CellSizes(:,cel_row_recv)), MPI_REAL, ne_rank,
+     $                  tag, comm, STAT, ierror)   
+                                  
+! DIAGONAL COMMUNICATION BETWEEN PROCS
+              else
+        !Set cel_col and cel_row to send
+                  if(i_proc_NOPBC.gt.proc_row) then
+                      cel_row = Dimen
+                  else
+                      cel_row = 1
+                  endif
+                  if(j_proc_NOPBC.gt.proc_col) then
+                      cel_col = Dimen
+                  else
+                      cel_row = 1
+                  endif
+ 
+                  call MPI_ISEND(PartCoords(:,:,cel_col,cel_row), 
+     $                   CellSizes(cel_col,cel_row), MPI_REAL, ne_rank,
+     $                                 tag,comm, REQUEST, ierror)  
+                 
+         !Set cel_col and cel_row to recieve
+                  if(cel_row.eq.Dimen) then
+                      cel_row = Dimen + 1
+                  else
+                      cel_row = 0
+                  endif
+                  if(proc_col.eq.Dimen) then
+                      cel_col = Dimen + 1
+                  else
+                      cel_row = 0
+                  endif
+                   
+                  call MPI_RECV(PartCoords(:,:,cel_col,cel_row),
+     $           CellSizes(cel_col,cel_row) , MPI_REAL, ne_rank , 
+     $                   tag, comm, STAT, ierror)
+              endif
+          end do
+      end do 
+
+      END SUBROUTINE
+
